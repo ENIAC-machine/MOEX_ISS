@@ -1,5 +1,7 @@
 # MOEX API Wrapper
 
+![coverage](https://img.shields.io/badge/coverage-95%25-brightgreen)
+
 ## Description
 
 This library is the wrapper for the MOEX free ISS API. There are many like this, but this one is mine. Current implementation features only the most basic functions, but it will expand over time.
@@ -7,7 +9,7 @@ This library is the wrapper for the MOEX free ISS API. There are many like this,
 ## Installation
 
 ```bash
-pip install git+https://github.com/ENIAC-machine/trading
+pip install git+https://github.com/ENIAC-machine/MOEX_ISS
 ```
 
 ## Quick start
@@ -15,9 +17,10 @@ pip install git+https://github.com/ENIAC-machine/trading
 Below you can find some example python code to load a history of the 'YNDX' stock:
 
 ```python
-from moex_api.history import history
+from iss import download
 
-df = history(sec='YNDX', st='2020-01-01')
+df = download(sec='YNDX', st='2020-01-01')
 
 print(df.head())
 ```
+

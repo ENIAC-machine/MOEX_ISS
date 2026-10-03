@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: iss
+Version: 1.0.0
+Author: ENIAC_machine
+Requires-Dist: numpy==2.4.4
+Requires-Dist: pandas==3.0.2
+Requires-Dist: scipy==1.17.1
+Requires-Dist: tqdm==4.67.3
+Requires-Dist: requests==2.33.1
+Requires-Dist: polars==1.43.1
+Requires-Dist: asyncio==4.0.0

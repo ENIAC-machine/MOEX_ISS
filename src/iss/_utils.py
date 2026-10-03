@@ -66,7 +66,8 @@ def ens_same_length(args:dict, verbose:bool=False)->dict:
                          disable=not verbose):
         arr: tuple = ens_tuple(arr)
         if len(arr) < max_len:
-            args[key] = arr + arr[-1]*max_len-len(arr)
+            args[key] = arr + arr[-1:]*(max_len-len(arr))
+            print(args)
 
     return args 
 

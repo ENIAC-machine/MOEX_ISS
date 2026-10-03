@@ -5,10 +5,10 @@ import datetime as dt
 from urllib.parse import urlencode
 from typing import Iterable
 
-from base import OffsetFunctionFactory
-from _utils import *
+from iss.base import OffsetFunctionFactory
+from iss._utils import *
 
-__all__ = ['history', 'trading_listing']
+__all__ = ['download', 'trading_listing']
 
 
 #439
@@ -18,20 +18,47 @@ __all__ = ['history', 'trading_listing']
                        increment_arg='start',
                        increment=100,
                        ignore_end=3)
-def history(security: str ,
-            engine: str = 'stock',
-            market: str = 'shares',
-            sort_order: str ='asc',
-            st: dt.date = dt.date(2014, 1, 1), 
-            end: dt.date = dt.date(2037, 12, 31),
-            numtrades: int = 0, 
-            tradingsession: str = '', 
-            marketprice_board: bool = True,
-            verbose: bool = False,
-            lang: str = 'en',
-            timeout: int = 5,
-            out: str = 'polars'
-            ) -> dict[str, pl.DataFrame | pl.LazyFrame]:
+def download(security: str ,
+             engine: str = 'stock',
+             market: str = 'shares',
+             sort_order: str ='asc',
+             st: dt.date = dt.date(2014, 1, 1), 
+             end: dt.date = dt.date(2037, 12, 31),
+             numtrades: int = 0, 
+             tradingsession: str = '', 
+             marketprice_board: bool = True,
+             verbose: bool = False,
+             lang: str = 'en',
+             timeout: int = 5,
+             out: str = 'polars'
+             ) -> dict[str, int | str | bool]:
+
+    '''
+    Download information on a security for given engine and market and for a given date range
+
+    Inputs:
+        security: str - name of the security
+        engine: str - target engine
+        market: str - target market
+        sort_order: str - order of sorting data upon receiving, can be `asc` or `desc`
+        st: datetime.date - start date to get info for
+        end: datetime.date - end date to get info for
+        numtrades: int - minimal number of trades with a security
+        tradingsession: str - session of choice (only for funds' market)
+            0 - Moring session
+            1 - Day session (main)
+            2 - Evening session
+            3 - Overall
+        marketprice_board: bool - give data only for the main trading session, if True - means activate this feature
+        verbose: bool - verbosity flag
+        lang: str - preffered language, can be `en` or `ru`
+        timeout: int - timeout in seconds, defaults to 5
+        out: str - output format, can be `polars`, `pandas` or `lazy` for polars.LazyFrame, defaults to `polars`
+
+    Outputs:
+        candles as a DataFrame of choice
+    '''
+
 
     total = np.ceil((end - st).days / 100).astype(int)
 
@@ -46,7 +73,6 @@ def history(security: str ,
     return kwargs
 
 
-#TODO: use the OffsetFunctionFactory on this
 #489
 @prep_kwargs(unrelated_args=('lang', 'verbose'))
 def trading_listing(engine: str | Iterable[str] = 'stock',
@@ -81,11 +107,10 @@ def trading_listing(engine: str | Iterable[str] = 'stock',
     
     '''
 
-
     check_connection()
 
-    if status not in {'traded', 'not traded', 'all'}:
-        raise ValueError(f"Wrong input to the status argument, expected 'traded', 'not traded' or 'all', got {status}")
+    if (set(status) - {'traded', 'not traded', 'all'}) > set():
+        raise ValueError(f"Wrong input to the status argument, expected 'traded', 'not traded' or 'all', got {set(status) - {'traded', 'not traded', 'all'}}")
 
     args = locals()
 
@@ -112,3 +137,4 @@ def trading_listing(engine: str | Iterable[str] = 'stock',
         data['|'.join([args['engine'][idx], args['market'][idx]])] = pl.concat(dfs)
 
     return data
+

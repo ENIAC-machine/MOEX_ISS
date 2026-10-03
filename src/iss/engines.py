@@ -7,9 +7,10 @@ from typing import Iterable, Sequence
 from warnings import warn, filterwarnings
 from urllib.parse import urlencode
 from datetime import datetime, date, timedelta
+from tqdm.auto import tqdm
 
-from .base import QueryFunctionFactory, TickerFunctionFactory
-from ._utils import *
+from iss.base import QueryFunctionFactory, TickerFunctionFactory
+from iss._utils import *
 
 filterwarnings('default')
 
@@ -24,6 +25,10 @@ def available_engines(lang: str = 'en') -> pl.DataFrame:
 
     '''
     Corresponds to iss.moex.com/iss/reference/391
+    Lists available engines
+
+    Inputs:
+        lang: str - preffered language, can be `en` or `ru`
     '''
 
     return pl.read_csv(f'https://iss.moex.com/iss/engines.csv?lang={lang}',
@@ -36,6 +41,15 @@ def engine_info(engine: str, lang: str = 'en') -> dict[str, pl.DataFrame]:
 
     '''
     https://iss.moex.com/iss/reference/397
+    
+    Gives info about engine
+
+    Inputs:
+        engine: str - engine to give info about
+        lang: str - preffered language, can be `en` or `ru`
+
+    Outputs:
+        engine info in dict format 
     '''
 
     check_connection()
@@ -49,8 +63,8 @@ def engine_info(engine: str, lang: str = 'en') -> dict[str, pl.DataFrame]:
     time_cols = ['start_time', 'stop_time']
 
     for k in res.keys():
-        info[k] = pl.from_records(res[k]['data'], schema=res[k]['columns'])
-        if set(time_cols) < set(info[k].columns):
+        info[k] = pl.from_records(res[k]['data'], schema=res[k]['columns'], orient='row')
+        if set(time_cols) <= set(info[k].columns):
             info[k] = info[k].with_columns(pl.col(*time_cols).str.to_time(format="%H:%M:%S"))
 
 
@@ -67,12 +81,21 @@ def engine_zcyc(engine:str,
     '''
     Zero-coupon yield curve
     Corresponds to https://iss.moex.com/iss/reference/417
+    
+    Inputs:
+        engine: str - engine of choice 
+        date: str - date to look zcyc upon
+        lang: str - preffered language, can be `en` or `ru`
+
+    Outputs:    
+        zcyc info
+
     '''
 
     return locals()
 
 @TickerFunctionFactory(base_url='https://iss.moex.com/iss/engines/{}/markets/{}/securities/{}/candles.csv?',
-                       unrelated_args=['verbose', 'engine', 'market', 'out'],
+                       unrelated_args=['verbose', 'out', 'timeout'],
                        to_format=['engine', 'market', 'tickers'])
 def _candle_single_day(engine: str,
                        market: str,
@@ -80,10 +103,13 @@ def _candle_single_day(engine: str,
                        st: date | Iterable[date],
                        end: date | Iterable[date],
                        interval: int | Iterable[int] = 10,
-                       verbose: bool = True,
+                       verbose: bool = False,
                        out: str = 'polars',
+                       timeout: int = 5
                        ) -> dict[str, pl.DataFrame | pd.DataFrame | pl.LazyFrame]:
     kwargs = locals()
+
+    print('_candle_single_day respond')
 
     kwargs['from'] = kwargs['st']
     kwargs['till'] = kwargs['end']
@@ -97,21 +123,34 @@ def _candle_single_day(engine: str,
 
     return kwargs
 
-
-def candles(engine: str,
-            market: str,
-            tickers: str | Iterable[str],
+def candles(tickers: str | Iterable[str],
             st: date | Iterable[date],
             end: date | Iterable[date],
+            engine: str = 'stock',
+            market: str = 'shares',
             interval: int | Iterable[int] = 10,
             verbose: bool = True,
             out: str = 'polars',
+            timeout: int = 5
             ) -> dict[str, pl.DataFrame | pd.DataFrame | pl.LazyFrame]:
+   
     '''
-    
+    Gives candles per [interval] minutes for selected interval
+
+    Inputs:
+        tickers: str | Iterable[str] - target tickers
+        st: date | Iterable[date] - start date(-s)
+        end: date | Iterable[date] - end date(-s)
+        engine: str - target engine 
+        market: str - target market 
+        interval: int | Iterable[int] - desired interval, defaults to 10 minutes 
+        verbose: bool - verbosity flag 
+        out: str - output format, can be `polars`, `pandas` or `lazy` for pl.LazyFrame, defaults to `polars`
+        timeout: int - timeout time in seconds, defaults to 5 secs 
+
+    Outputs:    
+        dict with candle info with tickers as keys and candle info as values  
     '''
-    
-    kwargs = locals()
 
     tickers = ens_tuple(tickers)
     st: tuple[date] = ens_tuple(st)
@@ -120,9 +159,15 @@ def candles(engine: str,
     dfs = {}
     for ticker, ticker_st, ticker_end in zip(tickers, st, end):
     
-        days_between = (ticker_end - ticker_st).days
+        dfs[ticker] = []
 
-        date_range = [ticker_st + timedelta(days=i) for i in range(days_between)]
+        if ticker_st == ticker_end:
+            dfs[ticker] = None
+            continue
+
+        days_between = max((ticker_end - ticker_st).days, 1)
+
+        date_range = [ticker_st + timedelta(days=i) for i in range(1, days_between+1)]
 
         for end_dt in date_range:
             dfs_dt = _candle_single_day(tickers=ticker,
@@ -130,12 +175,14 @@ def candles(engine: str,
                                         end=end_dt,
                                         engine=engine,
                                         market=market,
-                                        interval=interval)
-            if len(dfs) == 0:
+                                        interval=interval,
+                                        verbose=verbose)
+            if len(dfs_dt) == 0:
+                break
+            elif len(dfs) == 0:
                 dfs = {k : [v] for k, v in dfs_dt.items()}
             else:
-                for k in dfs.keys():
-                    dfs[k].append(dfs_dt[k])
+                dfs[ticker].append(dfs_dt[ticker])
 
     target_schema = {'open' : pl.Float64,
                      'close' : pl.Float64,
@@ -147,9 +194,12 @@ def candles(engine: str,
                      'end' : pl.String}
 
     for ticker in tickers:
-        dfs[ticker] = map(lambda x: x.cast(target_schema),
-                          dfs[ticker])
-        dfs[ticker] = pl.concat(dfs[ticker])
+        if dfs[ticker] is None:
+            continue
+        else:
+            dfs[ticker] = map(lambda x: x.cast(target_schema),
+                              dfs[ticker])
+            dfs[ticker] = pl.concat(dfs[ticker])
         
         match out:
 
@@ -170,7 +220,15 @@ def available_markets(engine: str,
                       lang: str = 'en') -> pl.DataFrame:
 
     '''
-    Corresponds to https://iss.moex.com/iss/reference/343 
+    Corresponds to https://iss.moex.com/iss/reference/343
+    Gives info on available markets for a target engine 
+
+    Inputs:
+        engine: str - target engine 
+        lang: str - preffered language, can be `en` or `ru`
+
+    Outputs:
+        market info as a polars DataFrame
     '''
 
     check_connection()
@@ -181,17 +239,25 @@ def available_markets(engine: str,
                        encoding='cp1251',
                        separator=';')
 
-
 @QueryFunctionFactory(base_url='https://iss.moex.com/iss/engines/{}/markets/{}.json?',
                       unrelated_args=('engine', 'market'),
                       to_format=('engine', 'market'))
 def market_info(engine: str,
                 market: str,
                 lang: str = 'en'
-                ) -> dict[str, pl.DataFrame]:
+                ) -> dict[str, str]:
 
     '''
     Correponds to https://iss.moex.com/iss/reference/351
+    Gives info about a singular market for some target engine 
+
+    Inputs:
+        engine: str - target engine
+        market: str - target market
+        lang: str - preffered language, can be `en` or `ru`
+    
+    Outputs:
+        market_info as a dict with field names as keys and info as values 
     '''
 
     return locals()
@@ -207,12 +273,27 @@ def secstats(engine: str,
     '''
     Get the intermediate results for the trading day
     Corresponds to the method in docs https://iss.moex.com/iss/reference/403
+    
+    Inputs:
+        engine: str - target engine
+        market: str - target market
+        lang: str - preffered language, can be `en` or `ru`
+        trading_session: int - show data for some session,
+            1 - Day session (main)
+            2 - Evening session
+            3 - Overall
+        securities: Iterable[str] - array of target securities, no more than 10 are allowed
+        board_id: Iterable[str] - board filters, no more than 10 are allowed 
+
     '''
    
     check_connection()
 
     if len(board_id) > 10:
         raise ValueError(f'Expected 10 or less values in board_id, got {len(board_id)}')
+
+    if len(securities) > 10:
+        raise ValueError(f'Expected 10 or less values in securities, got {len(securities)}')
 
     url = f'https://iss.moex.com/iss/engines/{engine}/markets/{market}/secstats.csv?'
     url = url + urlencode({'tradingsession' : trading_session,
@@ -227,10 +308,9 @@ def secstats(engine: str,
                        skip_rows=2,
                        has_header=True)    
 
-
-@QueryFunctionFactory(base_url='https://iss.moex.com/iss/engines/{engine}/markets/zcyc.json?',
-                      unrelated_args=('engine'),
-                      to_format=('engine'))
+@QueryFunctionFactory(base_url='https://iss.moex.com/iss/engines/{}/markets/zcyc.json?',
+                      unrelated_args=('engine',),
+                      to_format=('engine',))
 def market_zcyc(engine: str,
                 lang: str = 'en',
                 frm: str = '2000-01-01',
@@ -253,7 +333,6 @@ def market_zcyc(engine: str,
 
     return kwargs
 
-
 def market_orderbook_info(engine: str,
                           market: str,
                           lang: str = 'en'
@@ -262,7 +341,14 @@ def market_orderbook_info(engine: str,
     Gives info on the orderbook for the particular market
     Corresponds to https://iss.moex.com/iss/reference/411
 
-    This one is special cause of the /ordebook at the end
+    Inputs:    
+        engine: str - target engine
+        market: str - target market
+        lang: str - preffered language, can be `en` or `ru`
+
+    Outputs:
+        orderbook info with field as key and info as value in a python dictionary
+
     '''
 
     check_connection()
@@ -277,39 +363,9 @@ def market_orderbook_info(engine: str,
     info = {}
 
     for k in res.keys():
-        info[k] = pl.from_records(res[k]['data'], schema=res[k]['columns'])
+        info[k] = pl.from_records(res[k]['data'], schema=res[k]['columns'], orient='row')
 
     return info
-
-
-class Market(object):
-
-    def __init__(self,
-                 engine: str,
-                 market: str
-                 ) -> None:
-
-        self.engine = engine
-        self.market = market
-
-    def __repr__(self) -> str:
-        return f'{self.engine}/{self.market}'
-
-
-class Engine(object):
-
-    markets: list[Market]
-
-    def __init__(self, engine: str) -> None:
-
-        if engine not in available_engines().drop_nulls()['name']:
-            raise ValueError('Engine not in the list of available engines')
-
-        self.engine = engine
-
-    def available_markets(self, lang: str) -> pl.DataFrame:
-        return available_markets(self.engine, lang)
-
 
 def res_intra(engine: str | Iterable[str],
               market: str | Iterable[str],
@@ -379,3 +435,5 @@ def res_intra(engine: str | Iterable[str],
             sec_info[sec] = df.filter(pl.col('SECID') == sec) 
 
     return sec_info
+
+

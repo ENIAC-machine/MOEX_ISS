@@ -13,8 +13,8 @@ from dataclasses import dataclass, make_dataclass, fields
 from urllib.parse import urlencode
 from typing import Callable, Iterable, Any
 
-from ISS._utils import *
-from ISS.base import AbstractFunctionFactory
+from iss._utils import *
+from iss.base import AbstractFunctionFactory
 
 class AsyncTickerFunctionFactory(AbstractFunctionFactory):
 
@@ -65,7 +65,7 @@ class AsyncTickerFunctionFactory(AbstractFunctionFactory):
                           ) -> dict[str, pd.DataFrame | pl.DataFrame | pl.LazyFrame]:
 
 
-            kwargs = func(*args, **kwargs)
+            kwargs = await func(*args, **kwargs)
 
             new_kwargs = {k: ens_tuple(v) for k, v in kwargs.items() 
                           if k not in self.unrelated_args
@@ -80,7 +80,7 @@ class AsyncTickerFunctionFactory(AbstractFunctionFactory):
             kwargs = new_kwargs
             del new_kwargs
 
-            #raise error if shit hits the fan
+            #raise error if we're cock-blocked 
             check_connection()
 
             tasks = []
@@ -101,16 +101,19 @@ class AsyncTickerFunctionFactory(AbstractFunctionFactory):
 
             ticker_descs = {}
 
-            for ticker in kwargs['tickers']:
+            for idt, ticker in enumerate(kwargs['tickers']):
 
                 if kwargs['out'] == 'polars_lazy':
-                    ticker_descs[ticker] = task.result().lazy()
+                    ticker_descs[ticker] = tasks[idt].result().lazy()
 
                 elif kwargs['out'] == 'pandas':
-                    ticker_descs[ticker] = task.result().to_pandas()
+                    ticker_descs[ticker] = tasks[idt].result().to_pandas()
 
                 elif kwargs['out'] != 'polars':
                     raise NotImplementedError
+                
+                else:
+                    ticker_descs[ticker] = tasks[idt].result()
 
             return ticker_descs
 
