@@ -1,6 +1,6 @@
 # MOEX API Wrapper
 
-![tests](https://github.com/YOUR_USERNAME/YOUR_REPO/actions/workflows/tests.yml/badge.svg)
+![tests](https://github.com/ENIAC-machine/MOEX_ISS/actions/workflows/tests.yml/badge.svg)
 
 ## Description
 
