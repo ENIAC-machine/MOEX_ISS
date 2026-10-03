@@ -24,6 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install pytest
           pip install -e ".[dev]"   # or however you install your package + test deps
 
       - name: Run tests with coverage
