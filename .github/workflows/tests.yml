@@ -1,6 +1,8 @@
 name: tests
 
 on:
+  push:
+    branches: [ py-stable ]
   pull_request:
     branches: [ py-stable ]
 
